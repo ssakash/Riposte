@@ -1,7 +1,9 @@
 import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import requests
+import json
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+
 
 app = Flask(__name__)
 CORS(app)
@@ -14,28 +16,28 @@ def ask():
     data = request.get_json()
     question = data.get("question", "").strip()
 
-    if not question:
-        return jsonify({'error': 'Question is empty'}), 400
+    def generate():
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/chat",
+                json={
+                    "model": "llama3",
+                    "messages": [
+                        {"role": "user", "content": question}
+                    ],
+                    "stream": True
+                },
+                stream=True
+            )
+            for line in response.iter_lines():
+                if line:
+                    json_data = json.loads(line.decode('utf-8'))
+                    content = json_data.get("message", {}).get("content", "")
+                    yield content
+        except Exception as e:
+            yield f"\n[ERROR]: {str(e)}"
 
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/chat",
-            json={
-                "model": "llama3",
-                "messages": [
-                    {"role": "user", "content": question}
-                ],
-                "stream": False  # Disable streaming to get single JSON
-            }
-        )
-        result = response.json()
-        answer = result['message']['content'].strip()
-        return jsonify({'answer': answer})
-
-
-    except Exception as e:
-        print("Error using Ollama:", e)
-        return jsonify({'error': 'LLM call failed'}), 500
+    return Response(generate(), mimetype='text/plain')
 
 if __name__ == '__main__':
     app.run(debug=True)
